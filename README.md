@@ -7,9 +7,6 @@ appear together?"*, *"someone reading a newspaper"*, *"license plate ABC123"*
 corpus, asks the user to confirm subjects of interest, and re-ranks based
 on feedback.
 
-The architecture matches the v1 plan exactly. See `~/.claude/plans/` for
-the design doc.
-
 ## Quick start
 
 ```bash
@@ -42,8 +39,8 @@ shots → frames → detect_track → embed_global → embed_box →
 | Object detection + tracking | RT-DETR + ByteTrack | placeholder; fake = synthetic person tracks |
 | Frame embeddings | SigLIP | placeholder; fake = deterministic seeded vectors |
 | Box embeddings | SigLIP on crops | placeholder; fake = clustered by instance_id |
-| Transcription | Parakeet | placeholder; fake = one segment per shot |
-| Captioning | Florence-2 | placeholder; fake = "Scene contains <classes>" |
+| Transcription | Parakeet (ASR) + BGE-small-en-v1.5 (embeddings) | placeholder; fake = one segment per shot |
+| Captioning | Florence-2 + BGE-small-en-v1.5 (embeddings) | placeholder; fake = "Scene contains <classes>" |
 | OCR | PaddleOCR (gated) | placeholder; fake = empty |
 
 `USE_FAKE_ML=true` (default in `.env.example`) lets the entire pipeline run
@@ -68,15 +65,17 @@ across many turns.
 | `search_by_image` | Image search at frame OR detection-crop level |
 | `search_instances_by_subject` | Two-pass cross-video: ANN match + within-video instance expansion |
 | `get_object_detections` | Filter pre-computed RT-DETR by class/conf/time |
-| `search_transcript` | Parakeet ASR semantic + substring |
-| `search_captions` | Florence-2 caption ANN |
+| `search_transcript` | Hybrid ASR search: exact substring → BM25 (stem-aware) → semantic (BGE-small) |
+| `search_captions` | Hybrid caption search: exact substring → BM25 → semantic (BGE-small) |
 | `search_ocr` | Text in scene (license plates, signs, screens) |
 | `activity_search` | v1: caption ANN; v2: V-JEPA2 on candidates |
-| `open_vocab_detect` | SAM 3.1 (SigLIP pre-filter → SAM only on top-k → cached) |
+| `open_vocab_detect` | Florence-2 open-vocabulary detector (SigLIP pre-filter → detect on top-k → cached) |
 | `co_presence` | Resolve every term to bboxes → proximity-join (center / IoU) |
 | `temporal_cluster` | Group hits into events using shot boundaries |
 | `scene_assembly` | Enter / dwell / exit timeline for a Subject |
 | `caption_frames` | On-demand densification |
+| `get_transcript_for_subject` | Transcript segments from videos where a Subject appears |
+| `get_frames_around_transcript` | Frames + detections visible while a phrase was spoken |
 | `request_user_confirmation` | Pause + emit SSE; wait for confirm/reject |
 | `register_subject` | Build a Subject from confirmed detections (≥3); N=20 farthest-point cap |
 | `apply_user_feedback` | Confirms expand the reference set; rejects flagged for sibling-subject hint |
@@ -86,8 +85,8 @@ across many turns.
 
 Markdown procedural-knowledge files routed per turn:
 
-- **Always loaded** — investigation-strategy, tool-result-budgeting, evidentiary-language
-- **Conditionally injected** — confirmation-ux, subject-registration-protocol, temporal-reasoning, spatial-reasoning, negative-result-handling, open-vocab-prompting, re-ranking-protocol
+- **Always loaded** — communication-style, investigation-strategy, result-synthesis, tool-result-budgeting, evidentiary-language, composition-patterns
+- **Conditionally injected** — confirmation-ux, subject-registration-protocol, re-ranking-protocol, spatial-reasoning, open-vocab-prompting, temporal-reasoning, negative-result-handling
 
 The `skill_router` selects based on (a) keywords in the user message and
 (b) interception of upcoming tool calls. `skill_eval.py` runs a small drift
@@ -113,7 +112,7 @@ ui_payload_hash, result_count, duration_ms, confirmation_id, parent_action_id)`
 To reconstruct a full investigation:
 ```sql
 SELECT * FROM agent_actions
-WHERE investigation_id = ? ORDER BY ts;
+WHERE investigation_id = $1 ORDER BY ts;
 ```
 
 ## Layout
@@ -124,15 +123,15 @@ investigation-platform/
 ├── start.sh                bring up everything
 ├── backend/
 │   ├── pyproject.toml      uv
-│   ├── alembic/            migrations (0001 schema, 0002 subject_references)
+│   ├── alembic/            migrations (0001 schema → 0005 captions BGE+tsvector)
 │   ├── app/
 │   │   ├── api/            collections, videos, ingest, investigations, stream, confirmations
 │   │   ├── worker/         Celery app + 8 stage tasks
 │   │   ├── agent/          orchestrator, schemas, audit, concurrency, skill_router, skill_eval
-│   │   │   ├── tools/      17 tools (registry in __init__.py)
-│   │   │   └── skills/     10 markdown skill files
+│   │   │   ├── tools/      19 tools (registry in __init__.py)
+│   │   │   └── skills/     13 markdown skill files
 │   │   └── models/         video, detection, subject, agent
-│   └── scripts/smoke_tools.py
+│   └── scripts/            smoke_tools.py, backfill_transcript_embeddings.py, backfill_caption_embeddings.py
 └── frontend/
     ├── src/
     │   ├── api/            client, collections, investigations, stream
@@ -147,4 +146,5 @@ investigation-platform/
 
 - TIPSv2 as a second concept index (only if SigLIP underperforms)
 - V-JEPA2 as an on-demand `activity_search` over already-filtered candidate clips, with an action-prototype bank
-- Non-biometric person reID model (OSNet etc.) if SigLIP-on-crop proves insufficient
+- SAM 3.1 replacing Florence-2 for `open_vocab_detect` (calibrated confidence scores; pending PyTorch ≥ 2.7)
+- OCR semantic embeddings (BGE-small, mirroring transcript/caption treatment)
