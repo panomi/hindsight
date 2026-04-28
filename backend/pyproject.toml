@@ -1,0 +1,106 @@
+[project]
+name = "invplatform-backend"
+version = "0.1.0"
+description = "Agentic video investigation platform - backend"
+requires-python = ">=3.11"
+dependencies = [
+    # Web
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.12",
+    "sse-starlette>=2.1",
+    # DB
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "psycopg[binary]>=3.2", # alembic sync driver
+    "alembic>=1.14",
+    "pgvector>=0.3.6",
+    # Settings / utils
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+    "aiofiles>=24.1",
+    # Jobs
+    "celery[redis]>=5.4",
+    "redis>=5.2",
+    # Agent / LLM
+    "anthropic>=0.39",
+    # Media
+    "ffmpeg-python>=0.2",
+    "pillow>=11.0",
+    "numpy>=2.0",
+    "opencv-python>=4.10",
+]
+
+[dependency-groups]
+ml = [
+    # Core ML — install on the GPU box: `uv sync --group ml --extra-index-url https://download.pytorch.org/whl/cu124`
+    # torch wheel pinned to CUDA 12.4 to match driver 12.5 (default torch>=2.5
+    # wheel ships against CUDA 12.8; falls back to CPU on older drivers).
+    "torch>=2.5,<2.6 ; sys_platform == 'linux'",
+    "torchvision>=0.20,<0.21 ; sys_platform == 'linux'",
+    "torchaudio>=2.5,<2.6 ; sys_platform == 'linux'",
+    # macOS / non-Linux: any CPU/MPS wheel is fine
+    "torch>=2.5 ; sys_platform != 'linux'",
+    "torchvision>=0.20 ; sys_platform != 'linux'",
+    "torchaudio>=2.5 ; sys_platform != 'linux'",
+    "transformers>=4.46",
+    "accelerate>=1.0",
+    "timm>=1.0",
+    "huggingface-hub>=0.26",
+    "einops>=0.8",
+    "scipy>=1.13",
+    "sentence-transformers>=3.0",
+    # Tracking (ByteTrack)
+    "boxmot>=11.0",
+    "lap>=0.5",
+    # Shot boundary detection (TransNetV2). PyTorch port; weights pulled from HF.
+    # If install fails, the shots stage falls back to an OpenCV histogram-based
+    # detector (worse but never blocks ingest).
+    "transnetv2-pytorch>=1.0 ; sys_platform == 'linux'",
+    # SAM 3.1 (open-vocab text-prompted detection + masks) ships via HF transformers
+    # OCR — RapidOCR via ONNX Runtime; no Paddle dep, no CUDA helper conflicts.
+    "rapidocr-onnxruntime>=1.4",
+    "opencv-python-headless>=4.10",
+    # ASR — Parakeet via NeMo
+    "nemo-toolkit[asr]>=2.3,<2.7 ; sys_platform == 'linux'",
+    # Audio loading for ASR
+    "soundfile>=0.12",
+    "librosa>=0.10",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "ruff>=0.8",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+# Linux machines pull torch wheels from the CUDA 12.4 index. This matches
+# NVIDIA driver 12.5+ on the GPU box (driver supports up to its own CUDA
+# version, so anything ≤ 12.4 wheel runs cleanly).
+torch = [
+    { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
+]
+torchaudio = [
+    { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
