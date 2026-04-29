@@ -43,7 +43,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-uv run celery -A app.worker.celery_app:celery_app worker --loglevel=info --concurrency=2 \
+# Concurrency 1 — every worker fork loads the full model stack (~15 GB)
+# so concurrency=2 would request ~30 GB even before any other GPU tenant.
+# Bump back to 2 once we have the GPU to ourselves (or split queues onto
+# dedicated workers so models aren't double-loaded).
+uv run celery -A app.worker.celery_app:celery_app worker --loglevel=info --concurrency=1 \
   -Q cpu,cpu_heavy,gpu_light,gpu_detect,gpu_embed,gpu_asr,gpu_vlm &
 celery_pid=$!
 

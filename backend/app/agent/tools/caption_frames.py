@@ -1,7 +1,20 @@
 """On-demand caption retrieval / densification.
 
-Returns already-stored captions from ingest first (zero inference cost).
-Only runs vision-language model inference on frames that have no caption yet.
+Returns the *stored* ingest caption per frame (the same fixed-prompt 50-word
+scene paragraph every frame got at ingest time). When a frame has no stored
+caption (rare — e.g. unkeyframed by the sampler) it generates one with the
+same ingest prompt and persists it.
+
+This is a **read** tool, not a Q&A tool:
+
+  * The prompt is fixed.  It cannot answer "what time is the flight?",
+    "what's on the license plate?", or any other custom question.  The agent
+    must use `ask_vision` for free-form visual questions.
+  * The output is a generic scene description, not a focused answer.
+
+If `caption_frames` returns a vague stored caption that doesn't address the
+user's question, do NOT call it again with the same frames hoping for better
+output — the prompt is the same.  Switch to `ask_vision`.
 """
 from uuid import UUID, uuid4
 
@@ -17,10 +30,16 @@ settings = get_settings()
 
 SCHEMA = {
     "name": "caption_frames",
-    "description": "Get scene descriptions for a specific list of frames. "
-                   "Returns stored descriptions from ingest where available; "
-                   "generates on-demand for any uncaptioned frames. "
-                   "Bounded — avoid more than ~20 frames at a time.",
+    "description": (
+        "Get the stored ingest scene description for specific frames "
+        "(generic 50-word paragraph using a fixed ingest prompt). Use to "
+        "*read context* about a frame you already located via search. "
+        "DOES NOT accept a custom prompt — for question-specific answers "
+        "(e.g. 'what time is on the schedule', 'what does the sign say', "
+        "'how many people are present'), use `ask_vision` instead. Re-calling "
+        "this tool with the same frames will return the same paragraph; do "
+        "not retry it for variation. Cap ~20 frames per call."
+    ),
     "input_schema": {
         "type": "object",
         "properties": {

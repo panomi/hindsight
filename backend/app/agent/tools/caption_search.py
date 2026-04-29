@@ -1,4 +1,4 @@
-"""Hybrid search over scene captions (Qwen2.5-VL paragraphs at ingest time).
+"""Hybrid search over scene captions (vision-language paragraphs at ingest).
 
 Mirrors `search_transcript`: substring → BM25 (Postgres FTS) → semantic
 (BGE-small) — same priority order, same `match_type` field on every
@@ -174,12 +174,32 @@ async def run(session: AsyncSession, params: dict, investigation_id: UUID) -> To
     # temporal_cluster (matching the contract used by visual_search).
     scored_csv = ", ".join(f"{i['frame_id']}:{i['score']:.3f}" for i in items[:20])
 
+    # ── Surface caption text in model_summary ──────────────────────────────
+    # Same rationale as search_transcript: the agent reads model_summary,
+    # not ui_payload, so it needs the actual paragraph to know whether a
+    # hit really shows the action being asked about.
+    MAX_SNIPPETS = 12
+    SNIPPET_CHARS = 220
+    head = f"search_captions('{query[:60]}'): {len(items)} hits ({breakdown})"
+    if not items:
+        body = ""
+    else:
+        lines = []
+        for it in items[:MAX_SNIPPETS]:
+            txt = (it["text"] or "").strip().replace("\n", " ")
+            if len(txt) > SNIPPET_CHARS:
+                txt = txt[: SNIPPET_CHARS - 1] + "…"
+            lines.append(
+                f"  [{it['match_type']} {it['score']:.2f}] "
+                f"v={it['video_id'][:8]} t={it['timestamp_seconds']:.1f}s "
+                f"frame={it['frame_id'][:8]}: \"{txt}\""
+            )
+        more = f"\n  …{len(items) - MAX_SNIPPETS} more not shown" if len(items) > MAX_SNIPPETS else ""
+        body = "\n" + "\n".join(lines) + more
+    suffix = f"\nframe_ids_with_scores: [{scored_csv}]" if items else ""
+
     return ToolResult(
-        model_summary=(
-            f"search_captions('{query[:60]}'): {len(items)} hits ({breakdown})"
-            + (f", spans {len({i['video_id'] for i in items})} video(s)" if items else "")
-            + (f"\nframe_ids_with_scores: [{scored_csv}]" if items else "")
-        ),
+        model_summary=head + body + suffix,
         ui_payload={"results": items, "query": query},
         top_k_used=len(items),
     )

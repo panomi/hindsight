@@ -81,6 +81,21 @@ export default function Investigate() {
   const onSend = () => {
     const t = input.trim();
     if (!t) return;
+    // If a confirmation popup is still pending, the user has implicitly
+    // moved on.  Tell the backend to unblock the agent with an empty
+    // response so it doesn't keep re-asking the same question forever.
+    // Fire-and-forget — the SSE `confirmation_resolved` event will clear
+    // the popup; we also clear locally for instant UX.
+    if (pendingConfirmation) {
+      const cid = pendingConfirmation.confirmationId;
+      setPendingConfirmation(null);
+      postConfirmation(id!, {
+        confirmation_id: cid,
+        confirmed_ids: [],
+        rejected_ids: [],
+        skipped: true,
+      }).catch(() => { /* idempotent on the backend; safe to ignore */ });
+    }
     pushUser(t);
     setAgentBusy(true);
     send.mutate(t);

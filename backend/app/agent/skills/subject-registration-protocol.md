@@ -37,10 +37,13 @@ Iterating to *improve* a registration is fine — it's how you build a high-qual
 - The confirmed items cluster too tightly (same shot, same angle); ask for a second batch from a different time window.
 - The user rejected several items that look similar to each other — propose a sibling subject (see above) instead of just retrying the same set.
 
+**Hard cap: at most 2 confirmation rounds per subject.** Round 1 = the initial ask. Round 2 = at most one follow-up if (and only if) round 1 yielded fewer than 3 confirmed detections AND you have a *different* candidate pool to propose (different time window, different source tool, or different frames). Never ask a third round — if you still don't have ≥3 confirmed, stop, tell the user what's blocking ("I have 2 confirmed and can't find a 3rd diverse view in this video"), and either move on or ask the user for a specific time range to look in. Counting iterations: each `request_user_confirmation` call for the same target subject is one round, regardless of how the conversation branches in between.
+
 **Stop and ask the user (or change strategy)** when:
 
 - `register_subject` returns the **same error code twice in a row** with detection IDs from the same source. The orchestrator will block a third identical attempt — don't let it get there.
-- You've already proposed two confirmation rounds for the same subject and the user has confirmed enough valid detections — call `register_subject` and move on; don't keep asking for more.
-- The user's most recent message is *not* about registration (e.g. "what did this person say?") — finish the registration in the background only if the new task strictly requires it; otherwise set it aside and answer what was just asked.
+- You've used both rounds. Call `register_subject` with whatever was confirmed (if ≥3) and move on; don't keep asking.
+- The user's most recent message is *not* about registration (e.g. "what did this person say?") — abandon the registration immediately and answer what was just asked. **The pending confirmation is dead by then; do not retry it.** If the registration is strictly required to answer the new question, you may propose a *single* fresh round with a clear "this is needed for your latest question" framing.
+- The previous `request_user_confirmation` returned `skipped=True` in its `model_summary` — the user moved on without answering. Treat that as a hard stop on this subject; do not re-ask.
 
 Each retry of `register_subject` should change at least one of: the detection IDs (different source tool, different time window, different frames), or the strategy (e.g. switch from caption-based to detection-based candidates). If you can't change anything, stop and tell the user why.

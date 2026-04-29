@@ -1,4 +1,4 @@
-"""Hybrid search over Parakeet transcript segments.
+"""Hybrid search over speech-to-text transcript segments.
 
 Three retrieval signals fused into a single ranked list:
 
@@ -169,16 +169,38 @@ async def run(session: AsyncSession, params: dict, investigation_id: UUID) -> To
         "match_type": r.source,
     } for r in merged]
 
-    src_counts = {}
+    src_counts: dict[str, int] = {}
     for it in items:
         src_counts[it["match_type"]] = src_counts.get(it["match_type"], 0) + 1
     breakdown = ", ".join(f"{k}={v}" for k, v in src_counts.items()) or "none"
 
+    # ── Surface actual text in model_summary ───────────────────────────────
+    # The agent reads `model_summary` (the `ui_payload` is for the UI panel
+    # only).  Give it the literal spoken words so it can quote, paraphrase,
+    # or decide whether a hit is on-topic — counts alone made the agent say
+    # things like "I can see hits but not the text".  Cap at 12 lines and
+    # truncate each to keep prompt size bounded.
+    MAX_SNIPPETS = 12
+    SNIPPET_CHARS = 220
+    head = f"search_transcript('{query[:60]}'): {len(items)} segments ({breakdown})"
+    if not items:
+        body = ""
+    else:
+        lines = []
+        for it in items[:MAX_SNIPPETS]:
+            txt = (it["text"] or "").strip().replace("\n", " ")
+            if len(txt) > SNIPPET_CHARS:
+                txt = txt[: SNIPPET_CHARS - 1] + "…"
+            lines.append(
+                f"  [{it['match_type']} {it['score']:.2f}] "
+                f"v={it['video_id'][:8]} t={it['start_seconds']:.1f}-{it['end_seconds']:.1f}s: "
+                f"\"{txt}\""
+            )
+        more = f"\n  …{len(items) - MAX_SNIPPETS} more not shown" if len(items) > MAX_SNIPPETS else ""
+        body = "\n" + "\n".join(lines) + more
+
     return ToolResult(
-        model_summary=(
-            f"search_transcript('{query[:60]}'): {len(items)} segments ({breakdown})"
-            + (f", spans {len({i['video_id'] for i in items})} video(s)" if items else "")
-        ),
+        model_summary=head + body,
         ui_payload={"results": items, "query": query},
         top_k_used=len(items),
     )

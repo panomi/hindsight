@@ -16,8 +16,11 @@ export const getInvestigationHistory = (id: string) =>
   api<{ events: ChatMessage[] }>(`/api/investigations/${id}/history`);
 
 export const postConfirmation = (investigationId: string, payload: {
-  confirmation_id: string; confirmed_ids: string[]; rejected_ids: string[];
+  confirmation_id: string;
+  confirmed_ids: string[];
+  rejected_ids: string[];
+  skipped?: boolean;
 }) =>
-  api<{ ok: true }>(`/api/investigations/${investigationId}/confirm`, {
+  api<{ ok: true; noop?: boolean }>(`/api/investigations/${investigationId}/confirm`, {
     method: "POST", json: payload,
   });

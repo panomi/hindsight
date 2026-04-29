@@ -462,6 +462,57 @@ def qwen_vl_caption_batch(images: list, batch_size: int = _QWEN_BATCH_SIZE) -> l
 
     Returns a list of caption strings in the same order as *images*.
     """
+    return _qwen_vl_generate_batch(
+        images=images,
+        prompts=[_CAPTION_PROMPT] * len(images),
+        max_new_tokens=80,
+        batch_size=batch_size,
+    )
+
+
+_VQA_SYSTEM_INSTRUCTION = (
+    "Answer the user's question about the image with a short, factual response. "
+    "Read any visible text exactly as written. If the answer cannot be determined "
+    "from the image alone, reply 'unknown'. Do not speculate."
+)
+
+
+def qwen_vl_vqa_batch(
+    images: list,
+    questions: list[str],
+    max_new_tokens: int = 96,
+    batch_size: int = _QWEN_BATCH_SIZE,
+) -> list[str]:
+    """Visual-question-answering: short factual answer per (image, question) pair.
+
+    Distinct from `qwen_vl_caption_batch` in two ways:
+      * Per-image prompt — the agent's free-form question, not the fixed
+        ingest caption template.
+      * Constrained instruction — read text literally, return "unknown" on
+        ambiguity, no narration.  Captions are 50-word paragraphs; VQA
+        answers are typically <30 tokens (a number, a phrase, "unknown").
+    """
+    if len(images) != len(questions):
+        raise ValueError("qwen_vl_vqa_batch: images and questions must have equal length")
+    prompts = [
+        f"{_VQA_SYSTEM_INSTRUCTION}\n\nQuestion: {q.strip()}"
+        for q in questions
+    ]
+    return _qwen_vl_generate_batch(
+        images=images,
+        prompts=prompts,
+        max_new_tokens=max_new_tokens,
+        batch_size=batch_size,
+    )
+
+
+def _qwen_vl_generate_batch(
+    images: list,
+    prompts: list[str],
+    max_new_tokens: int,
+    batch_size: int,
+) -> list[str]:
+    """Shared VL generate loop used by both captioning and VQA paths."""
     if not images:
         return []
 
@@ -470,22 +521,23 @@ def qwen_vl_caption_batch(images: list, batch_size: int = _QWEN_BATCH_SIZE) -> l
     results: list[str] = []
 
     for i in range(0, len(images), batch_size):
-        batch = images[i : i + batch_size]
+        batch_imgs = images[i : i + batch_size]
+        batch_prompts = prompts[i : i + batch_size]
 
         texts = [
             proc.apply_chat_template(
                 [{"role": "user", "content": [
                     {"type": "image", "image": img},
-                    {"type": "text", "text": _CAPTION_PROMPT},
+                    {"type": "text", "text": prompt},
                 ]}],
                 tokenize=False,
                 add_generation_prompt=True,
             )
-            for img in batch
+            for img, prompt in zip(batch_imgs, batch_prompts, strict=True)
         ]
         inputs = proc(
             text=texts,
-            images=batch,
+            images=batch_imgs,
             padding=True,
             return_tensors="pt",
         ).to(device())
@@ -493,23 +545,17 @@ def qwen_vl_caption_batch(images: list, batch_size: int = _QWEN_BATCH_SIZE) -> l
         with t.inference_mode():
             output_ids = model.generate(
                 **inputs,
-                # Prompt caps captions at 50 words.  English BPE averages
-                # ~1.3 tokens/word, so 50w ≈ 65 tokens; +15 cushion for
-                # punctuation and the occasional verbose passage.  Tighter
-                # ceiling than 128 → both enforces the cap and shaves
-                # ~10–15% off generation time on captions that would
-                # otherwise have run long.
-                max_new_tokens=80,
+                max_new_tokens=max_new_tokens,
                 do_sample=False,
                 temperature=None,
                 top_p=None,
             )
 
-        generated = [out[len(inp):] for inp, out in zip(inputs.input_ids, output_ids)]
-        captions = proc.batch_decode(
+        generated = [out[len(inp):] for inp, out in zip(inputs.input_ids, output_ids, strict=True)]
+        decoded = proc.batch_decode(
             generated, skip_special_tokens=True, clean_up_tokenization_spaces=True
         )
-        results.extend(c.strip() for c in captions)
+        results.extend(s.strip() for s in decoded)
 
     return results
 

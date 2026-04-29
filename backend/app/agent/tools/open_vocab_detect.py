@@ -130,11 +130,31 @@ async def run(session: AsyncSession, params: dict, investigation_id: UUID) -> To
         ).on_conflict_do_nothing())
     await session.commit()
 
+    # ── Surface frame_id + bbox in model_summary ──────────────────────────
+    # The bboxes from this tool are the typical input to `ask_vision`
+    # (cropping a license plate / schedule board / sign).  The agent cannot
+    # chain that without seeing the bbox dicts, so we list each hit
+    # compactly.  Note: bboxes are normalised (0..1) — same shape ask_vision
+    # accepts directly, no reformatting needed.
+    head = (
+        f"open_vocab_detect('{prompt[:60]}'): {len(items)} frames, "
+        f"score range [{min(i['score'] for i in items):.3f}, "
+        f"{max(i['score'] for i in items):.3f}]"
+    )
+    max_lines = 12
+    lines = []
+    for it in items[:max_lines]:
+        b = it["bbox"]
+        lines.append(
+            f"  [score={it['score']:.2f}] v={it['video_id'][:8]} "
+            f"t={it['timestamp_seconds']:.1f}s frame={it['frame_id'][:8]} "
+            f"bbox=[{b['x1']:.2f},{b['y1']:.2f},{b['x2']:.2f},{b['y2']:.2f}]"
+        )
+    more = f"\n  …{len(items) - max_lines} more not shown" if len(items) > max_lines else ""
+    body = "\n" + "\n".join(lines) + more if lines else ""
+
     return ToolResult(
-        model_summary=(
-            f"open_vocab_detect('{prompt[:60]}'): {len(items)} frames, "
-            f"score range [{min(i['score'] for i in items):.3f}, {max(i['score'] for i in items):.3f}]"
-        ),
+        model_summary=head + body,
         ui_payload={"results": items, "prompt": prompt},
         top_k_used=len(items),
     )

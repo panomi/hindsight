@@ -112,6 +112,16 @@ async def run(session: AsyncSession, params: dict, investigation_id: UUID,
     try:
         await asyncio.wait_for(event.wait(), timeout=timeout_sec)
     except asyncio.TimeoutError:
+        # Tell the UI the popup is dead so it stops showing the prompt
+        # forever even though the agent has already moved on.
+        if sse_queue is not None:
+            await sse_queue.put({
+                "event": "confirmation_resolved",
+                "data": {
+                    "confirmation_id": str(confirmation_id),
+                    "reason": "timeout",
+                },
+            })
         return ToolResult(
             model_summary=f"request_user_confirmation: timed out after {timeout_sec}s",
             ui_payload={"confirmation_id": str(confirmation_id), "timed_out": True},
@@ -120,15 +130,33 @@ async def run(session: AsyncSession, params: dict, investigation_id: UUID,
     resolution = get_resolution(confirmation_id) or {}
     confirmed = resolution.get("confirmed_ids", [])
     rejected = resolution.get("rejected_ids", [])
+    skipped = bool(resolution.get("skipped"))
+
+    # Tell the UI this confirmation is no longer pending — covers cases where
+    # multiple tabs have it open, or the user resolved via "skip" (sending a
+    # new message while the popup was open).  The submitting tab also clears
+    # locally on success; this is belt-and-braces for the rest.
+    if sse_queue is not None:
+        await sse_queue.put({
+            "event": "confirmation_resolved",
+            "data": {
+                "confirmation_id": str(confirmation_id),
+                "reason": "skipped" if skipped else "submitted",
+            },
+        })
+
+    summary = (
+        f"user skipped confirmation [{mode}] (moved on to a new question)"
+        if skipped
+        else f"user confirmation [{mode}]: {len(confirmed)} confirmed, {len(rejected)} rejected"
+    )
 
     return ToolResult(
-        model_summary=(
-            f"user confirmation [{mode}]: {len(confirmed)} confirmed, "
-            f"{len(rejected)} rejected"
-        ),
+        model_summary=summary,
         ui_payload={
             "confirmation_id": str(confirmation_id),
-            "confirmed_ids": confirmed, "rejected_ids": rejected, "mode": mode,
+            "confirmed_ids": confirmed, "rejected_ids": rejected,
+            "mode": mode, "skipped": skipped,
         },
         top_k_used=len(confirmed) + len(rejected),
     )

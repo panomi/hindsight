@@ -93,7 +93,12 @@ class ConfirmationIn(BaseModel):
     may be UUIDs (detection_id / frame_id) but can also be track keys or
     composite strings.  The agent matches them back by string equality, so we
     accept any string here rather than constraining to UUID.
+
+    `skipped=True` means the user moved on (typed a new chat message before
+    answering) — the agent unblocks with 0 confirmed / 0 rejected and the UI
+    clears the popup.
     """
     confirmation_id: UUID
     confirmed_ids: list[str] = []
     rejected_ids: list[str] = []
+    skipped: bool = False

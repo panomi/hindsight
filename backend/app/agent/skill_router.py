@@ -32,6 +32,7 @@ TOOL_TRIGGERED = {
     "apply_user_feedback": "re-ranking-protocol",
     "co_presence": "spatial-reasoning",
     "open_vocab_detect": "open-vocab-prompting",
+    "ask_vision": "ask-vision-protocol",
     "temporal_cluster": "temporal-reasoning",
     "scene_assembly": "temporal-reasoning",
 }

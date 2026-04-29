@@ -91,8 +91,32 @@ async def run(session: AsyncSession, params: dict, investigation_id: UUID) -> To
         "filepath": r.filepath,
     } for r in rows]
 
+    # ── Surface recognised text in model_summary ───────────────────────────
+    # Same rationale as search_transcript / search_captions: the agent
+    # cannot quote or reason about a license plate / sign it cannot see in
+    # its own context.  Cap to keep prompts small.
+    MAX_SNIPPETS = 12
+    SNIPPET_CHARS = 120  # OCR texts are short — license plates, signs
+    head = f"search_ocr('{query[:60]}'): {len(items)} text hits"
+    if not items:
+        body = ""
+    else:
+        lines = []
+        for it in items[:MAX_SNIPPETS]:
+            txt = (it["text"] or "").strip().replace("\n", " ")
+            if len(txt) > SNIPPET_CHARS:
+                txt = txt[: SNIPPET_CHARS - 1] + "…"
+            conf = it.get("confidence")
+            conf_s = f"{conf:.2f}" if isinstance(conf, (int, float)) else "?"
+            lines.append(
+                f"  [conf={conf_s}] v={it['video_id'][:8]} "
+                f"t={it['timestamp_seconds']:.1f}s frame={it['frame_id'][:8]}: \"{txt}\""
+            )
+        more = f"\n  …{len(items) - MAX_SNIPPETS} more not shown" if len(items) > MAX_SNIPPETS else ""
+        body = "\n" + "\n".join(lines) + more
+
     return ToolResult(
-        model_summary=f"search_ocr('{query[:60]}'): {len(items)} text hits",
+        model_summary=head + body,
         ui_payload={"results": items, "query": query},
         top_k_used=len(items),
     )

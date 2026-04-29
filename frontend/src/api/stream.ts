@@ -7,6 +7,7 @@ export type AgentEvent =
   | { event: "tool_result"; data: { id: string; tool: string; summary: string; count: number; ui_payload: any; duration_ms: number } }
   | { event: "results_update"; data: any }
   | { event: "confirmation_request"; data: { confirmation_id: string; mode: "frames" | "instances" | "events"; question: string; items: any[] } }
+  | { event: "confirmation_resolved"; data: { confirmation_id: string; reason: "submitted" | "skipped" | "timeout" } }
   | { event: "subject_registered"; data: { subject_id: string; label: string } }
   | { event: "message"; data: { role: "assistant"; content: string } }
   | { event: "error"; data: { message: string } }
@@ -21,7 +22,8 @@ export function subscribeToInvestigation(
   const es = new EventSource(url);
   const handlers: Array<[string, (ev: MessageEvent) => void]> = [];
   const evNames = ["tool_start", "tool_result", "results_update",
-                   "confirmation_request", "subject_registered",
+                   "confirmation_request", "confirmation_resolved",
+                   "subject_registered",
                    "message", "error", "ping", "done"] as const;
   for (const name of evNames) {
     const h = (ev: MessageEvent) => {

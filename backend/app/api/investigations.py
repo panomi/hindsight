@@ -124,11 +124,20 @@ async def _safe_run(investigation_id: UUID, content: str) -> None:
 
 @router.post("/{investigation_id}/confirm", status_code=status.HTTP_202_ACCEPTED)
 async def post_confirm(investigation_id: UUID, payload: ConfirmationIn) -> dict:
+    """Resolve a pending confirmation (submit / skip).
+
+    Idempotent on a second call with the same id (returns ok:true, no-op),
+    so the frontend can fire-and-forget a "skip" before sending a new chat
+    message even if the popup was already resolved.
+    """
     from app.agent.tools.confirmation import resolve_pending
     ok = resolve_pending(payload.confirmation_id, {
         "confirmed_ids": list(payload.confirmed_ids),
         "rejected_ids": list(payload.rejected_ids),
+        "skipped": bool(payload.skipped),
     })
     if not ok:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "confirmation not found / already resolved")
+        # Already resolved or expired — treat as no-op so the "skip on send"
+        # path below never blocks the user from posting a new message.
+        return {"ok": True, "noop": True}
     return {"ok": True}

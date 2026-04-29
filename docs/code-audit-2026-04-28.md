@@ -106,11 +106,10 @@ After Qwen batching, we're still calling `siglip_encode_text([text])[0]` once pe
 - **P1 caption embedding model + substring OR bug + tool description leakage** — Same treatment for captions: migration `0005` (`Caption.embedding` 512→384, `text_tsv` GIN), `caption.py` + `caption_frames.py` re-wired to BGE, `search_captions` rewritten as hybrid (substring → BM25 → semantic) exposing `match_type`. Backfill script `scripts/backfill_caption_embeddings.py`. Tool SCHEMAs across `audio_search`, `caption_search`, `ocr_search`, `detection_query`, `open_vocab_detect`, `caption_frames` no longer leak model names to the LLM (Parakeet, PaddleOCR, RT-DETR, Florence-2, SigLIP, SAM 3.1, qwen2.5-vl). `investigation-strategy.md` rewritten — fixed wrong tool name (`search_audio_transcripts` → `search_transcript`), fixed broken audio→cluster pipeline, added composer tools to per-query patterns.
 - **DB pool exhaustion** — pool 5/10 → 10/20, `pool_timeout=15s`; `/videos/{id}/file` and `/frames/{id}/image` release the AsyncSession before returning `FileResponse`, with an LRU filepath cache to avoid repeat DB hits.
 
-## Open follow-ups (queued)
+## Open follow-ups
 
-- **OCR text embeddings still SigLIP** (`ocr.py:_real_ocr` line embedding all_texts). Same model-fit issue we fixed for transcripts and captions, but lower-impact because OCR queries are dominated by the substring-first path (license plates, exact signs). When picked up: mirror migration 0005 against the `ocr_texts` table, swap to `bge_encode_text`, optionally rewrite `search_ocr` as hybrid (substring → BM25 → semantic) with the substring path retaining priority.
-- **Open-vocab detector replacement.** Florence-2 OVD emits no real confidence scores (we hard-code 0.8 in `ml.py`). When PyTorch ≥ 2.7 lands, swap to SAM 3.1 (user has HF gated access) or Grounding DINO for calibrated scores and better quality.
-- **Audit P2 backlog** — `temporal_cluster` silent length mismatch, `co_presence.time_window_sec` unused, OCR opens image twice per frame, `update_status` always commits, etc.
+Tracked in `code-audit-2026-04-29.md` (auth-tight REST middleware, OCR-to-BGE,
+OVD replacement, `temporal_cluster` fail-loud, etc).
 
 ---
 

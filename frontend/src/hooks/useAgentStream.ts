@@ -44,6 +44,17 @@ export function useAgentStream(investigationId: string | undefined) {
             items: e.data.items,
           });
           break;
+        case "confirmation_resolved":
+          // Backend says this confirmation is no longer pending (submitted,
+          // skipped, or timed out).  Clear the popup if it's still showing
+          // the same id — guards against multi-tab and "user moved on".
+          {
+            const cur = useInvestigationStore.getState().pendingConfirmation;
+            if (!cur || cur.confirmationId === e.data.confirmation_id) {
+              setPendingConfirmation(null);
+            }
+          }
+          break;
         case "done":
         case "error":
           setAgentBusy(false);

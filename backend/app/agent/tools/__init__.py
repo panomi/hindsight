@@ -20,6 +20,7 @@ TOOL_MODULES: dict[str, str] = {
     "scene_assembly":             "app.agent.tools.scene_assembly",
     "temporal_cluster":           "app.agent.tools.temporal_cluster",
     "caption_frames":             "app.agent.tools.caption_frames",
+    "ask_vision":                 "app.agent.tools.ask_vision",
     "get_transcript_for_subject": "app.agent.tools.transcript_for_subject",
     "get_frames_around_transcript": "app.agent.tools.frames_around_transcript",
     "request_user_confirmation":  "app.agent.tools.confirmation",
